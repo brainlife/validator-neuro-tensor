@@ -17,27 +17,28 @@ def normalize(img):
     return img / img_max * 500
 
 
-def process_file(ftype, in_dict, out_dict, verbosity='errors'):
+def process_file(ftype, in_dict, res_list, optional=False, num_dims=3):
     tag = ftype.lower()
     fname = in_dict.get(tag)
     if fname is not None:
-        validate_img(fname, ftype, out_dict, verbosity=verbosity)
+        validate_img(fname, ftype, res_list, num_dims=num_dims)
         symlink_fname = os.path.join('output', '{}.nii.gz'.format(tag))
         if os.path.lexists(symlink_fname):
             os.remove(symlink_fname)
         os.symlink("../" + fname, symlink_fname)
     else:
-        msg = "couldn't be found in config.json."
-        out_dict[verbosity].append('"{}" {}'.format(tag, msg))
+        if not optional:
+            msg = "couldn't be found in config.json."
+            res_list.append('"{}" {}'.format(tag, msg))
 
 
-def validate_img(fname, ftype, dictionary, verbosity='errors'):
+def validate_img(fname, ftype, res_list, num_dims=3):
     basename = os.path.basename(fname)
     # Make sure nifti starts with gzip marker
     msg = "file doesn't look like a gzip-ed nifti."
     with open(fname, 'rb') as test_f:
         if binascii.hexlify(test_f.read(2)) != b'1f8b':
-            dictionary[verbosity].append('"{}" {}'.format(basename, msg))
+            res_list.append('"{}" {}'.format(basename, msg))
             return
 
     try:
@@ -48,10 +49,9 @@ def validate_img(fname, ftype, dictionary, verbosity='errors'):
         dims = header['dim']
 
         # Check dimensions
-        if dims[0] != 3:
-            dictionary[verbosity].append(
-                '"{}" input should be 3D but it has '
-                '{} dimensions.'.format(basename, dims[0]))
+        if dims[0] != num_dims:
+            res_list.append('"{}" input should be 3D but it has {} dimensions.'
+                            .format(basename, dims[0]))
             return
 
         slice_x_pos = dims[1] // 2
@@ -61,6 +61,12 @@ def validate_img(fname, ftype, dictionary, verbosity='errors'):
         slice_x = img[slice_x_pos, :, :]
         slice_y = img[:, slice_y_pos, :]
         slice_z = img[:, :, slice_z_pos]
+
+        if num_dims == 4:
+            slice_c_pos = dims[4] // 2
+            slice_x = slice_x[..., slice_c_pos]
+            slice_y = slice_y[..., slice_c_pos]
+            slice_z = slice_z[..., slice_c_pos]
 
         slice_x = normalize(slice_x).T
         slice_y = normalize(slice_y).T
@@ -75,8 +81,8 @@ def validate_img(fname, ftype, dictionary, verbosity='errors'):
         img_z.save(os.path.join('secondary', '{}_z.png'.format(lowtype)))
     except Exception as e:
         print(e)
-        dictionary[verbosity].append('Nibabel failed on "{}" with error code: '
-                                     '{}'.format(basename, e))
+        res_list.append('Nibabel failed on "{}" with error code: {}'
+                        .format(basename, e))
 
 
 if __name__ == '__main__':
@@ -94,17 +100,18 @@ if __name__ == '__main__':
         config = json.load(config_json)
 
     # Validate mandatory files
-    process_file('FA', config, results)
-    process_file('MD', config, results)
-    process_file('RD', config, results)
-    process_file('AD', config, results)
+    process_file('FA', config, results['errors'])
+    process_file('MD', config, results['errors'])
+    process_file('RD', config, results['errors'])
+    process_file('AD', config, results['errors'])
 
     # Check optional files
-    process_file('CL', config, results, verbosity='warnings')
-    process_file('CP', config, results, verbosity='warnings')
-    process_file('CL', config, results, verbosity='warnings')
-    process_file('Tensors', config, results, verbosity='warnings')
-    process_file('Kurtosis', config, results, verbosity='warnings')
+    process_file('CL', config, results['warnings'], optional=True)
+    process_file('CP', config, results['warnings'], optional=True)
+    process_file('CL', config, results['warnings'], optional=True)
+    process_file('Tensors', config, results['warnings'], optional=True,
+                 num_dims=4)
+    process_file('Kurtosis', config, results['warnings'], optional=True)
 
     with open('product.json', 'w') as fp:
         json.dump(results, fp)
