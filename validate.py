@@ -20,8 +20,9 @@ def normalize(img):
 def process_file(ftype, in_dict, res_list, optional=False, num_dims=3):
     tag = ftype.lower()
     fname = in_dict.get(tag)
+    ret = None
     if fname is not None:
-        validate_img(fname, ftype, res_list, num_dims=num_dims)
+        ret = validate_img(fname, ftype, res_list, num_dims=num_dims)
         symlink_fname = os.path.join('output', '{}.nii.gz'.format(tag))
         if os.path.lexists(symlink_fname):
             os.remove(symlink_fname)
@@ -30,6 +31,7 @@ def process_file(ftype, in_dict, res_list, optional=False, num_dims=3):
         if not optional:
             msg = "couldn't be found in config.json."
             res_list.append('"{}" {}'.format(tag, msg))
+    return ret
 
 
 def validate_img(fname, ftype, res_list, num_dims=3):
@@ -39,7 +41,7 @@ def validate_img(fname, ftype, res_list, num_dims=3):
     with open(fname, 'rb') as test_f:
         if binascii.hexlify(test_f.read(2)) != b'1f8b':
             res_list.append('"{}" {}'.format(basename, msg))
-            return
+            return None
 
     try:
         data = nib.load(fname)
@@ -52,7 +54,7 @@ def validate_img(fname, ftype, res_list, num_dims=3):
         if dims[0] != num_dims:
             res_list.append('"{}" input should be 3D but it has {} dimensions.'
                             .format(basename, dims[0]))
-            return
+            return None
 
         slice_x_pos = dims[1] // 2
         slice_y_pos = dims[2] // 2
@@ -79,10 +81,13 @@ def validate_img(fname, ftype, res_list, num_dims=3):
         img_y.save(os.path.join('secondary', '{}_y.png'.format(lowtype)))
         img_z = Image.fromarray(np.flipud(slice_z)).convert('L')
         img_z.save(os.path.join('secondary', '{}_z.png'.format(lowtype)))
+
+        return dims[1], dims[2], dims[3]
     except Exception as e:
         print(e)
         res_list.append('Nibabel failed on "{}" with error code: {}'
                         .format(basename, e))
+        return None
 
 
 if __name__ == '__main__':
@@ -99,19 +104,37 @@ if __name__ == '__main__':
     with open('config.json', encoding='utf-8') as config_json:
         config = json.load(config_json)
 
+    imgs_shapes = []
+
     # Validate mandatory files
-    process_file('FA', config, results['errors'])
-    process_file('MD', config, results['errors'])
-    process_file('RD', config, results['errors'])
-    process_file('AD', config, results['errors'])
+    fa_ret = process_file('FA', config, results['errors'])
+    imgs_shapes.append(fa_ret)
+    md_ret = process_file('MD', config, results['errors'])
+    imgs_shapes.append(md_ret)
+    rd_ret = process_file('RD', config, results['errors'])
+    imgs_shapes.append(rd_ret)
+    ad_ret = process_file('AD', config, results['errors'])
+    imgs_shapes.append(ad_ret)
 
     # Check optional files
-    process_file('CL', config, results['warnings'], optional=True)
-    process_file('CP', config, results['warnings'], optional=True)
-    process_file('CL', config, results['warnings'], optional=True)
-    process_file('Tensors', config, results['warnings'], optional=True,
-                 num_dims=4)
-    process_file('Kurtosis', config, results['warnings'], optional=True)
+    cl_ret = process_file('CL', config, results['warnings'], optional=True)
+    imgs_shapes.append(cl_ret)
+    cp_ret = process_file('CP', config, results['warnings'], optional=True)
+    imgs_shapes.append(cp_ret)
+    cs_ret = process_file('CS', config, results['warnings'], optional=True)
+    imgs_shapes.append(cs_ret)
+    tensors_ret = process_file('Tensors', config, results['warnings'],
+                               optional=True, num_dims=4)
+    imgs_shapes.append(tensors_ret)
+    kurtosis_ret = process_file('Kurtosis', config, results['warnings'],
+                                optional=True)
+    imgs_shapes.append(kurtosis_ret)
+
+    imgs_shapes = np.array([list(s) for s in imgs_shapes if s is not None])
+    for i in range(3):
+        t = imgs_shapes[:, i]
+        if np.max(t) != np.min(t):
+            results['errors'].append("Dimensions don't match.")
 
     with open('product.json', 'w') as fp:
         json.dump(results, fp)
