@@ -1,0 +1,11 @@
+{
+    "fa": "testdata/empty/fa.nii.gz",
+    "md": "testdata/empty/md.nii.gz",
+    "rd": "testdata/empty/rd.nii.gz",
+    "ad": "testdata/empty/ad.nii.gz",
+    "cl": "testdata/empty/cl.nii.gz",
+    "cp": "testdata/empty/cp.nii.gz",
+    "cs": "testdata/empty/cs.nii.gz",
+    "tensors": "testdata/empty/tensors.nii.gz",
+    "kurtosis": "testdata/empty/kurtosis.nii.gz"
+}
